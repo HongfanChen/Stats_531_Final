@@ -6,10 +6,10 @@ Click [here](http://htmlpreview.github.io/?https://github.com/HongfanChen/Stats_
 ### Topic
 Using pomp package and SEIR model to investigate the pattern of mumps(a contagious disease).
 
-#### Research Question
+### Research Question
 Whether or not mumps cases of Michigan in the 1970s can be well modeled by an SEIR pomp model? 
 
-### Group Member and Software
+### Group Members
 - Jessica Leviton
 - Hongfan Chen
 
