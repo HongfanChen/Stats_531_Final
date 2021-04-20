@@ -113,12 +113,16 @@ mumps_Nsim = switch(run_level, 50, 70, 100)
 ## ----------------------------------------------------------------------------
 ## -------------------- Local Maximization of Likelihood ----------------------
 ## ----------------------------------------------------------------------------
-cl = makeCluster(8)
-registerDoParallel(cl)
+
+stew('results/local.rda', {
+registerDoParallel(8)
 registerDoRNG(2021531)
 mifs_local = foreach(i = 1:mumps_Nreps_local,
                      .packages = c("pomp", "tidyverse"),
-                     .combine = c) %dopar% { 
+                     .combine = c,
+                     .export = c("mumpSEIR","params","mumps_Np",
+                                 "mumps_Nreps_eval", "mumps_Nmif")
+                     ) %dopar% { 
   mumpSEIR %>%
     mif2(
       params = params,
@@ -130,14 +134,14 @@ mifs_local = foreach(i = 1:mumps_Nreps_local,
                     )
     )
 }
-stopCluster(cl)
-
-cl = makeCluster(8)
-registerDoParallel(cl)
+registerDoParallel(8)
 registerDoRNG(2021531)
 lik_local = foreach(i = 1:mumps_Nreps_local,
                      .packages = c("pomp", "tidyverse"),
-                     .combine=rbind) %dopar% {
+                     .combine = rbind,
+                     .export = c("mumpSEIR", "params",
+                                 "mumps_Np", "mumps_Nreps_eval")
+                    ) %dopar% {
   logmeanexp(
     replicate(mumps_Nreps_eval,
               logLik(pfilter(mumpSEIR,
@@ -146,8 +150,9 @@ lik_local = foreach(i = 1:mumps_Nreps_local,
                      )
               ),
     se = TRUE)
-}
-stopCluster(cl)
+                     }
+})
+
 ## Local: Parameter and likelihood --------------------------------------------
 r_local = t(sapply(mifs_local, coef)) %>%
   as_tibble() %>%
@@ -204,12 +209,15 @@ mumps_box = rbind(
   eta = c(0,0.10), rho = c(0, 0.9)
 )
 
-cl = makeCluster(8)
-registerDoParallel(cl)
+stew('results/global.rda', {
+registerDoParallel()
 registerDoRNG(2021531)
 mifs_global = foreach(i = 1:mumps_Nreps_global,
-                       .packages = 'pomp', 
-                       .combine = c) %dopar%{
+                      .packages = 'pomp', 
+                      .combine = c,
+                      .export = c("mifs_local", "mumps_box",
+                                  "mumps_fixed_params")
+                      ) %dopar%{
   mif2(mifs_local[[1]],
        params = c(apply(mumps_box,
                         1,
@@ -217,15 +225,16 @@ mifs_global = foreach(i = 1:mumps_Nreps_global,
                   mumps_fixed_params
                   )
        )
-}
-stopCluster(cl)
+                       }
 
-cl = makeCluster(8)
-registerDoParallel(cl)
+registerDoParallel()
 registerDoRNG(2021531)
 lik_global = foreach(i = 1:mumps_Nreps_global,
                      .packages = 'pomp',
-                     .combine = rbind) %dopar% {
+                     .combine = rbind,
+                     .export = c("mumps_Nreps_eval",
+                                 "mumpSEIR", "mumps_Np")
+                     ) %dopar% {
   logmeanexp(
     replicate(mumps_Nreps_eval, 
               logLik(pfilter(mumpSEIR,
@@ -235,8 +244,8 @@ lik_global = foreach(i = 1:mumps_Nreps_global,
               ),
     se = TRUE
     )
-}
-stopCluster(cl)
+                     }
+})
 ## Global: Parameter and likelihood -------------------------------------------
 r_global = t(sapply(mifs_global, coef)) %>%
   as_tibble() %>%
@@ -284,6 +293,7 @@ mod_global %>%
   labs(x = "Weeks",
        y = "Reporting Cases",
        color = "Original Data")
+
 ## ----------------------------------------------------------------------------
 ## ------------------------ Profile Likelihood For Rho ------------------------
 ## ----------------------------------------------------------------------------
@@ -298,7 +308,6 @@ box = t(sapply(mifs_global, coef)) %>%
   filter(logLik > max(logLik) - 10, logLik_se < 2) %>%
   sapply(range)
 
-## Grid Search
 guesses = profile_design(
   rho = seq(0.01, 0.50, length = 30),
   lower = box[1, c("b1", "b2", "Phi", "eta")],
@@ -340,7 +349,6 @@ stew('results/profile.rda', {
 maxloglik = max(results$logLik, na.rm=TRUE)
 ci_cutoff = maxloglik - 0.5 * qchisq(df = 1, p = 0.95)
 
-## PLot with CI
 results %>%
   filter(is.finite(logLik)) %>%
   mutate(rho = round(rho, 5)) %>%
@@ -358,7 +366,6 @@ results %>%
   )+
   lims(y = maxloglik-c(10,0))
 
-## CI
 rho_ci = results %>%
   drop_na() %>%
   filter(logLik > max(logLik) - 0.5 * qchisq(df = 1, p = 0.95)) %>%
